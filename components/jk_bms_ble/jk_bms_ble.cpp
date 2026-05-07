@@ -386,15 +386,12 @@ void JkBmsBle::decode_(const std::vector<uint8_t> &data) {
       }
       break;
     case 0x02:
-      // =========================================================
-      // 修改点：针对新版 PB 固件，我们直接引导至专用的解析函数
-      // 如果你的固件是新版 PB/PD 系列，即便配置是 JK02_32S 也会进入此逻辑
-      // =========================================================
       if (this->protocol_version_ == PROTOCOL_VERSION_JK04) {
         this->decode_jk04_cell_info_(data);
+      } else if (this->protocol_version_ == PROTOCOL_VERSION_JK_PB) {
+        this->decode_jk_pb_cell_info_(data); // 专门解析新固件
       } else {
-        // 核心修改：针对你那块 300 字节的新版报文进行解析
-        this->decode_jk_pb_cell_info_(data); 
+        this->decode_jk02_cell_info_(data); // 保留对老固件的支持
       }
       break;
     case 0x03:
