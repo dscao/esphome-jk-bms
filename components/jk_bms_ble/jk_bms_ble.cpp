@@ -187,46 +187,7 @@ void JkBmsBle::decode_jk_pb_cell_info_(const std::vector<uint8_t> &data) {
   this->status_notification_received_ = true;
 }
 
-// 以下是状态管理及辅助函数（确保全部实现）
-void JkBmsBle::track_online_status_() {
-  if (this->no_response_count_ < MAX_NO_RESPONSE_COUNT) this->no_response_count_++;
-  if (this->no_response_count_ == MAX_NO_RESPONSE_COUNT) {
-    this->publish_device_unavailable_();
-    this->no_response_count_++;
-  }
-}
 
-void JkBmsBle::reset_online_status_tracker_() {
-  this->no_response_count_ = 0;
-  this->publish_state_(this->online_status_binary_sensor_, true);
-}
-
-void JkBmsBle::publish_device_unavailable_() {
-  this->publish_state_(this->online_status_binary_sensor_, false);
-  this->publish_state_(this->total_voltage_sensor_, NAN);
-  this->publish_state_(this->current_sensor_, NAN);
-  this->publish_state_(this->state_of_charge_sensor_, NAN);
-}
-
-void JkBmsBle::publish_state_(binary_sensor::BinarySensor *binary_sensor, const bool &state) {
-  if (binary_sensor != nullptr) binary_sensor->publish_state(state);
-}
-
-void JkBmsBle::publish_state_(sensor::Sensor *sensor, float value) {
-  if (sensor != nullptr) sensor->publish_state(value);
-}
-
-void JkBmsBle::publish_state_(text_sensor::TextSensor *text_sensor, const std::string &state) {
-  if (text_sensor != nullptr) text_sensor->publish_state(state);
-}
-
-void JkBmsBle::publish_state_(number::Number *number, float value) {
-  if (number != nullptr) number->publish_state(value);
-}
-
-void JkBmsBle::publish_state_(switch_::Switch *obj, const bool &state) {
-  if (obj != nullptr) obj->publish_state(state);
-}
 
 void JkBmsBle::decode_jk02_cell_info_(const std::vector<uint8_t> &data) {
   auto jk_get_16bit = [&](size_t i) -> uint16_t { return (uint16_t(data[i + 1]) << 8) | (uint16_t(data[i + 0]) << 0); };
