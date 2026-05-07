@@ -19,9 +19,10 @@ namespace esphome {
 namespace jk_bms_ble {
 
 enum ProtocolVersion {
-  PROTOCOL_VERSION_JK04,
-  PROTOCOL_VERSION_JK02_24S,
-  PROTOCOL_VERSION_JK02_32S,
+  PROTOCOL_VERSION_JK04 = 0x01,
+  PROTOCOL_VERSION_JK02_24S = 0x02,
+  PROTOCOL_VERSION_JK02_32S = 0x03,
+  PROTOCOL_VERSION_JK_PB = 0x04,
 };
 
 class JkBmsBle :
