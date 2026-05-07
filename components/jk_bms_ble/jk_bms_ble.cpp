@@ -457,8 +457,8 @@ void JkBmsBle::decode_jk_pb_cell_info_(const std::vector<uint8_t> &data) {
   this->publish_state_(this->power_tube_temperature_sensor_, (float)((int16_t)jk_get_16bit(144)) * 0.1f);
 
   // 总电压 (150, 4字节, mV)
-  float total_v = (float) jk_get_32bit(150) * 0.001f;
-  this->publish_state_(this->total_voltage_sensor_, total_v);
+  float total_voltage = (float) jk_get_32bit(150) * 0.001f;
+  this->publish_state_(this->total_voltage_sensor_, total_voltage);
 
   // 实时功率 (154, 4字节, W) - 极控新加的字段
   float power = (float)((int32_t)jk_get_32bit(154)) * 0.001f; 
