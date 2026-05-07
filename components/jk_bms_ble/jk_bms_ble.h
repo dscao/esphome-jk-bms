@@ -439,6 +439,7 @@ class JkBmsBle :
   void decode_device_info_(const std::vector<uint8_t> &data);
   void decode_jk02_cell_info_(const std::vector<uint8_t> &data);
   void decode_jk04_cell_info_(const std::vector<uint8_t> &data);
+  void decode_jk_pb_cell_info_(const std::vector<uint8_t> &data);
   void decode_jk02_settings_(const std::vector<uint8_t> &data);
   void decode_jk04_settings_(const std::vector<uint8_t> &data);
   void publish_state_(binary_sensor::BinarySensor *binary_sensor, const bool &state);
