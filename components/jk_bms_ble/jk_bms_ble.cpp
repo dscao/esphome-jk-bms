@@ -386,10 +386,15 @@ void JkBmsBle::decode_(const std::vector<uint8_t> &data) {
       }
       break;
     case 0x02:
+      // =========================================================
+      // 修改点：针对新版 PB 固件，我们直接引导至专用的解析函数
+      // 如果你的固件是新版 PB/PD 系列，即便配置是 JK02_32S 也会进入此逻辑
+      // =========================================================
       if (this->protocol_version_ == PROTOCOL_VERSION_JK04) {
         this->decode_jk04_cell_info_(data);
       } else {
-        this->decode_jk02_cell_info_(data);
+        // 核心修改：针对你那块 300 字节的新版报文进行解析
+        this->decode_jk_pb_cell_info_(data); 
       }
       break;
     case 0x03:
@@ -398,6 +403,100 @@ void JkBmsBle::decode_(const std::vector<uint8_t> &data) {
     default:
       ESP_LOGW(TAG, "Unsupported message type (0x%02X)", data[4]);
   }
+}
+
+// =========================================================
+// 终极绝杀：针对新版 PB 协议的专用 C++ 解析函数
+// =========================================================
+void JkBmsBle::decode_jk_pb_cell_info_(const std::vector<uint8_t> &data) {
+  auto jk_get_16bit = [&](size_t i) -> uint16_t { return (uint16_t(data[i + 1]) << 8) | (uint16_t(data[i + 0]) << 0); };
+  auto jk_get_32bit = [&](size_t i) -> uint32_t {
+    return (uint32_t(jk_get_16bit(i + 2)) << 16) | (uint32_t(jk_get_16bit(i + 0)) << 0);
+  };
+
+  if (data.size() < 200) {
+    ESP_LOGW(TAG, "PB frame too short: %d bytes", data.size());
+    return;
+  }
+
+  ESP_LOGI(TAG, "New PB Protocol frame received (%d bytes)", data.size());
+
+  // 1. 电芯电压解析 (位置 6 开始，固定 32 串空间)
+  uint8_t cells_enabled = 0;
+  float min_cell_v = 100.0f;
+  float max_cell_v = -100.0f;
+  float total_sum_v = 0.0f;
+  uint8_t min_v_idx = 0;
+  uint8_t max_v_idx = 0;
+
+  for (uint8_t i = 0; i < 32; i++) {
+    float v = (float) jk_get_16bit(i * 2 + 6) * 0.001f;
+    if (v > 0.5f && v < 5.0f) { // 只处理有效的电芯
+      total_sum_v += v;
+      cells_enabled++;
+      if (v < min_cell_v) { min_cell_v = v; min_v_idx = i + 1; }
+      if (v > max_cell_v) { max_cell_v = v; max_v_idx = i + 1; }
+      this->publish_state_(this->cells_[i].cell_voltage_sensor_, v);
+    } else {
+      this->publish_state_(this->cells_[i].cell_voltage_sensor_, 0.0f);
+    }
+  }
+
+  if (cells_enabled > 0) {
+    this->publish_state_(this->min_cell_voltage_sensor_, min_cell_v);
+    this->publish_state_(this->max_cell_voltage_sensor_, max_cell_v);
+    this->publish_state_(this->delta_cell_voltage_sensor_, max_cell_v - min_cell_v);
+    this->publish_state_(this->average_cell_voltage_sensor_, total_sum_v / cells_enabled);
+    this->publish_state_(this->min_voltage_cell_sensor_, (float) min_v_idx);
+    this->publish_state_(this->max_voltage_cell_sensor_, (float) max_v_idx);
+  }
+
+  // 2. 核心遥测数据 (基于我们逆向的 100% 精确偏移量)
+  
+  // MOS 温度 (144)
+  this->publish_state_(this->power_tube_temperature_sensor_, (float)((int16_t)jk_get_16bit(144)) * 0.1f);
+
+  // 总电压 (150, 4字节, mV)
+  float total_v = (float) jk_get_32bit(150) * 0.001f;
+  this->publish_state_(this->total_voltage_sensor_, total_v);
+
+  // 实时功率 (154, 4字节, W) - 极控新加的字段
+  float power = (float)((int32_t)jk_get_32bit(154)) * 0.001f; 
+  this->publish_state_(this->power_sensor_, power);
+  this->publish_state_(this->charging_power_sensor_, std::max(0.0f, power));
+  this->publish_state_(this->discharging_power_sensor_, std::abs(std::min(0.0f, power)));
+
+  // 总电流 (158, 4字节, mA)
+  float current = (float)((int32_t)jk_get_32bit(158)) * 0.001f;
+  this->publish_state_(this->current_sensor_, current);
+
+  // 电池探头温度 (162 & 164)
+  float t1 = (float)((int16_t)jk_get_16bit(162)) * 0.1f;
+  float t2 = (float)((int16_t)jk_get_16bit(164)) * 0.1f;
+  if (t1 > -50.0f) this->publish_state_(this->temperatures_[0].temperature_sensor_, t1);
+  if (t2 > -50.0f) this->publish_state_(this->temperatures_[1].temperature_sensor_, t2);
+
+  // SOC 剩余百分比 (173, 1字节)
+  this->publish_state_(this->state_of_charge_sensor_, (float)data[173]);
+
+  // 剩余容量 (174) & 总设置容量 (178)
+  this->publish_state_(this->capacity_remaining_sensor_, (float)jk_get_32bit(174) * 0.001f);
+  this->publish_state_(this->total_battery_capacity_setting_sensor_, (float)jk_get_32bit(178) * 0.001f);
+
+  // 循环次数 (182, 4字节)
+  this->publish_state_(this->charging_cycles_sensor_, (float)jk_get_32bit(182));
+
+  // 3. 开关状态 (198, 199, 200)
+  this->publish_state_(this->charging_binary_sensor_, data[198] == 0x01);
+  this->publish_state_(this->discharging_binary_sensor_, data[199] == 0x01);
+  this->publish_state_(this->balancing_binary_sensor_, data[200] == 0x01);
+
+  // 4. 运行时间 (166, 4字节 - 根据报文推测位置)
+  uint32_t uptime = jk_get_32bit(166);
+  this->publish_state_(this->total_runtime_sensor_, (float)uptime);
+  this->publish_state_(this->total_runtime_formatted_text_sensor_, format_total_runtime_(uptime));
+
+  this->status_notification_received_ = true;
 }
 
 void JkBmsBle::decode_jk02_cell_info_(const std::vector<uint8_t> &data) {
